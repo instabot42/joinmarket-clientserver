@@ -4,7 +4,7 @@ import os
 import sys
 import time
 import numbers
-from jmbase import get_log, jmprint, bintohex
+from jmbase import get_log, jmprint, bintohex, hextobin
 from .configure import jm_single, validate_address
 from .schedule import human_readable_schedule_entry, tweak_tumble_schedule,\
     schedule_to_text
@@ -152,7 +152,7 @@ def restart_wait(txid):
     and confirmed (it must be an in-wallet transaction since it always
     spends coins from the wallet).
     """
-    res = jm_single().bc_interface.get_transaction(txid)
+    res = jm_single().bc_interface.get_transaction(hextobin(txid))
     if not res:
         return False
     if res["confirmations"] == 0:
