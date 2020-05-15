@@ -65,7 +65,7 @@ donation_address_url = "https://bitcoinprivacy.me/joinmarket-donations"
 JM_GUI_VERSION = '12'
 
 from jmbase import get_log
-from jmbase.support import DUST_THRESHOLD, EXIT_FAILURE, utxo_to_utxostr, bintohex
+from jmbase.support import DUST_THRESHOLD, EXIT_FAILURE, utxo_to_utxostr, bintohex, hextobin
 from jmclient import load_program_config, get_network, update_persist_config,\
     open_test_wallet_maybe, get_wallet_path,\
     jm_single, validate_address, weighted_order_choose, Taker,\
@@ -1138,7 +1138,9 @@ class CoinsTab(QWidget):
                 else:
                     for k, v in um.items():
                         # txid:index, btc, address
-                        t = utxo_to_utxostr(k)
+                        success, t = utxo_to_utxostr(k)
+                        # keys must be utxo format else a coding error:
+                        assert success
                         s = "{0:.08f}".format(v['value']/1e8)
                         a = mainWindow.wallet_service.script_to_addr(v["script"])
                         item = QTreeWidgetItem([t, s, a])
@@ -1151,7 +1153,7 @@ class CoinsTab(QWidget):
     def toggle_utxo_disable(self, txids, idxs):
         for i in range(0, len(txids)):
             txid = txids[i]
-            txid_bytes = btc.safe_from_hex(txid)
+            txid_bytes = hextobin(txid)
             mainWindow.wallet_service.toggle_disable_utxo(txid_bytes, idxs[i])
         self.updateUtxos()
 
@@ -1170,7 +1172,8 @@ class CoinsTab(QWidget):
                 assert idx >= 0
                 txids.append(txid)
                 idxs.append(idx)
-        except:
+        except Exception as e:
+            log.error("Error retrieving txids in Coins tab: " + repr(e))
             return
         # current item
         item = self.cTW.currentItem()
