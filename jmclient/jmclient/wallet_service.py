@@ -37,9 +37,14 @@ class WalletService(Service):
         # could be more flexible in future, and
         # the JM wallet object.
         self.bci = jm_single().bc_interface
+
         # keep track of the quasi-real-time blockheight
         # (updated in main monitor loop)
-        self.update_blockheight()
+        # (failure here will lead to reactor stop in RPC call)
+        self.current_blockheight = None
+        if not self.update_blockheight():
+            return
+
         self.wallet = wallet
         self.synced = False
 
@@ -66,14 +71,34 @@ class WalletService(Service):
         but will be called as part of main monitoring
         loop to ensure new transactions are added at
         the right height.
+        Any failure of the RPC call must result in this returning
+        False, otherwise return True (means self.current_blockheight
+        has been correctly updated).
         """
+        if self.current_blockheight:
+            old_blockheight = self.current_blockheight
+        else:
+            old_blockheight = -1
         try:
             self.current_blockheight = self.bci.get_current_block_height()
-            assert isinstance(self.current_blockheight, Integral)
         except Exception as e:
+            # This should never happen now, as we are catching every
+            # possible Exception in jsonrpc or bci.rpc:
             jlog.error("Failure to get blockheight from Bitcoin Core:")
             jlog.error(repr(e))
-            return
+            if reactor.running:
+                reactor.stop()
+            return False
+        if not self.current_blockheight:
+            return False
+
+        # We have received a new blockheight from Core, sanity check it:
+        assert isinstance(self.current_blockheight, Integral)
+        assert self.current_blockheight >= 0
+        if self.current_blockheight < old_blockheight:
+            jlog.warn("Bitcoin Core is reporting a lower blockheight, "
+                      "possibly a reorg.")
+        return True
 
     def startService(self):
         """ Encapsulates start up actions.
@@ -229,9 +254,13 @@ class WalletService(Service):
         Service is constantly in near-realtime sync with the blockchain.
         """
 
-        self.update_blockheight()
+        if not self.update_blockheight():
+            return
 
         txlist = self.bci.list_transactions(100)
+        if not txlist:
+            return
+
         new_txs = []
         for x in txlist:
             # process either (a) a completely new tx or
